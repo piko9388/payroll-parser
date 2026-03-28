@@ -1,0 +1,971 @@
+<!DOCTYPE html>
+
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>급여 명세서 파서</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<style>
+* { margin:0; padding:0; box-sizing:border-box; }
+
+body {
+font-family: ‘Malgun Gothic’, ‘Trebuchet MS’, sans-serif;
+background: #f5f5f5;
+color: #222;
+font-size: 15px;
+line-height: 1.7;
+}
+
+/* ── Header ── */
+.header {
+background: #fff;
+padding: 14px 16px;
+border-bottom: 1px solid #ddd;
+display: flex;
+justify-content: space-between;
+align-items: center;
+position: sticky; top: 0; z-index: 100;
+}
+.header h1 { font-size: 17px; color: #333; }
+.header h1 em { font-style: normal; font-size: 12px; color: #999; margin-left: 4px; }
+.badge { font-size: 12px; background: #e8f0fe; color: #1a73e8; padding: 4px 10px; border-radius: 4px; }
+
+/* ── Tabs ── */
+.tabs {
+display: flex;
+background: #fff;
+border-bottom: 1px solid #ddd;
+}
+.tab {
+flex: 1;
+padding: 12px 4px;
+text-align: center;
+font-size: 13px;
+font-weight: 600;
+color: #888;
+background: none;
+border: none;
+border-bottom: 2px solid transparent;
+cursor: pointer;
+}
+.tab.active { color: #1a73e8; border-bottom-color: #1a73e8; }
+
+/* ── Content ── */
+.wrap { padding: 14px; max-width: 1200px; margin: 0 auto; }
+.panel { display: none; }
+.panel.active { display: block; }
+
+/* ── Card ── */
+.card {
+background: #fff;
+border: 1px solid #e0e0e0;
+border-radius: 6px;
+padding: 16px;
+margin-bottom: 14px;
+}
+.card-title {
+font-size: 14px;
+font-weight: 700;
+color: #333;
+margin-bottom: 12px;
+padding-bottom: 8px;
+border-bottom: 1px solid #eee;
+}
+
+/* ── Textarea ── */
+textarea {
+width: 100%;
+height: 180px;
+border: 1px solid #ccc;
+border-radius: 4px;
+padding: 12px;
+font-family: ‘D2Coding’, ‘Consolas’, monospace;
+font-size: 13px;
+resize: vertical;
+outline: none;
+color: #333;
+background: #fafafa;
+}
+textarea:focus { border-color: #1a73e8; background: #fff; }
+
+/* ── Buttons ── */
+.btn-row { display: flex; gap: 8px; margin-top: 12px; flex-wrap: wrap; }
+
+.btn {
+padding: 10px 18px;
+border: none;
+border-radius: 4px;
+font-size: 14px;
+font-weight: 600;
+cursor: pointer;
+font-family: inherit;
+}
+.btn-primary { background: #1a73e8; color: #fff; }
+.btn-primary:active { background: #1557b0; }
+.btn-outline { background: #fff; color: #1a73e8; border: 1px solid #1a73e8; }
+.btn-success { background: #0d7c3d; color: #fff; }
+.btn-danger { background: #fff; color: #d32f2f; border: 1px solid #e0e0e0; }
+.btn-sm { padding: 6px 12px; font-size: 12px; }
+
+/* ── Parse Results ── */
+.parse-result {
+margin-top: 10px;
+border: 1px solid #e0e0e0;
+border-radius: 6px;
+overflow: hidden;
+}
+.result-header {
+padding: 10px 14px;
+font-size: 14px;
+font-weight: 700;
+display: flex;
+justify-content: space-between;
+}
+.result-match { background: #e8f5e9; color: #2e7d32; }
+.result-new { background: #fff3e0; color: #e65100; }
+.result-mismatch { background: #ffebee; color: #c62828; }
+
+.result-body {
+padding: 12px 14px;
+background: #fff;
+font-size: 14px;
+}
+.result-grid {
+display: grid;
+grid-template-columns: auto 1fr;
+gap: 6px 20px;
+}
+.result-grid dt { color: #666; font-size: 13px; }
+.result-grid dd { font-weight: 600; text-align: right; font-variant-numeric: tabular-nums; }
+
+/* ── Table ── */
+.table-wrap {
+overflow-x: auto;
+-webkit-overflow-scrolling: touch;
+border: 1px solid #e0e0e0;
+border-radius: 6px;
+background: #fff;
+}
+table { width: 100%; border-collapse: collapse; font-size: 13px; white-space: nowrap; }
+thead th {
+background: #f0f0f0;
+color: #333;
+padding: 10px 12px;
+font-weight: 700;
+text-align: center;
+border-bottom: 2px solid #ddd;
+position: sticky; top: 0;
+}
+tbody td {
+padding: 8px 12px;
+border-bottom: 1px solid #f0f0f0;
+text-align: right;
+font-variant-numeric: tabular-nums;
+color: #333;
+}
+tbody td:nth-child(-n+3) { text-align: center; }
+tbody td:last-child { text-align: left; }
+tbody tr:hover { background: #fafafa; }
+tbody tr.year-start { border-top: 2px solid #1a73e8; }
+.neg { color: #d32f2f; }
+
+/* ── Filter ── */
+.filter-row { display: flex; gap: 8px; margin-bottom: 12px; flex-wrap: wrap; align-items: center; }
+select {
+padding: 8px 12px;
+border: 1px solid #ccc;
+border-radius: 4px;
+font-size: 13px;
+font-family: inherit;
+background: #fff;
+color: #333;
+}
+
+/* ── Stats ── */
+.stats-row {
+display: grid;
+grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+gap: 10px;
+margin-bottom: 14px;
+}
+.stat-card {
+background: #fff;
+border: 1px solid #e0e0e0;
+border-radius: 6px;
+padding: 14px;
+text-align: center;
+}
+.stat-label { font-size: 12px; color: #888; margin-bottom: 4px; }
+.stat-value { font-size: 20px; font-weight: 700; color: #222; }
+.stat-sub { font-size: 11px; color: #999; margin-top: 2px; }
+
+/* ── Empty ── */
+.empty-state { text-align: center; padding: 40px 20px; color: #999; }
+.empty-state .icon { font-size: 32px; margin-bottom: 8px; }
+.empty-state p { font-size: 14px; }
+
+/* ── Toast ── */
+.toast {
+position: fixed; bottom: 20px; left: 50%;
+transform: translateX(-50%) translateY(80px);
+background: #333; color: #fff;
+padding: 12px 24px; border-radius: 6px;
+font-size: 14px; font-weight: 600;
+z-index: 999; opacity: 0;
+transition: all 0.3s;
+pointer-events: none;
+}
+.toast.show { transform: translateX(-50%) translateY(0); opacity: 1; }
+
+@media (max-width: 640px) {
+.stats-row { grid-template-columns: repeat(2, 1fr); }
+.stat-value { font-size: 17px; }
+}
+</style>
+
+</head>
+<body>
+
+<!-- ═══ LOGIN GATE ═══ -->
+
+<div id="loginGate" style="
+  position:fixed; top:0; left:0; width:100%; height:100%;
+  background:#f5f5f5; z-index:9999;
+  display:flex; align-items:center; justify-content:center;
+">
+  <div style="
+    background:#fff; border:1px solid #ddd; border-radius:8px;
+    padding:32px 28px; width:320px; max-width:90%;
+    text-align:center;
+  ">
+    <h2 style="font-size:18px; color:#333; margin-bottom:6px; font-family:'Malgun Gothic','Trebuchet MS',sans-serif;">급여 파서</h2>
+    <p style="font-size:13px; color:#999; margin-bottom:24px;">인증이 필요합니다</p>
+    <input id="loginId" type="text" placeholder="사번" autocomplete="username" style="
+      width:100%; padding:12px 14px; border:1px solid #ccc; border-radius:4px;
+      font-size:15px; font-family:inherit; margin-bottom:10px; outline:none;
+      color:#333; background:#fafafa;
+    " onfocus="this.style.borderColor='#1a73e8';this.style.background='#fff'"
+      onblur="this.style.borderColor='#ccc';this.style.background='#fafafa'">
+    <input id="loginPw" type="password" placeholder="비밀번호" autocomplete="current-password" style="
+      width:100%; padding:12px 14px; border:1px solid #ccc; border-radius:4px;
+      font-size:15px; font-family:inherit; margin-bottom:16px; outline:none;
+      color:#333; background:#fafafa;
+    " onfocus="this.style.borderColor='#1a73e8';this.style.background='#fff'"
+      onblur="this.style.borderColor='#ccc';this.style.background='#fafafa'"
+      onkeydown="if(event.key==='Enter')doLogin()">
+    <button onclick="doLogin()" style="
+      width:100%; padding:12px; background:#1a73e8; color:#fff;
+      border:none; border-radius:4px; font-size:15px; font-weight:700;
+      cursor:pointer; font-family:inherit;
+    ">로그인</button>
+    <p id="loginErr" style="font-size:13px; color:#d32f2f; margin-top:12px; display:none;">사번 또는 비밀번호가 올바르지 않습니다.</p>
+  </div>
+</div>
+
+<script>
+const AUTH_HASH = 'ac653affb03c9c0782559ad9168073a17fdc42c7448e71830edf52671c893ac7';
+const AUTH_KEY = 'payroll_auth_v1';
+
+async function sha256(text) {
+  const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(text));
+  return Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2,'0')).join('');
+}
+
+async function doLogin() {
+  const id = document.getElementById('loginId').value.trim();
+  const pw = document.getElementById('loginPw').value;
+  const hash = await sha256(id + ':' + pw);
+  if (hash === AUTH_HASH) {
+    sessionStorage.setItem(AUTH_KEY, '1');
+    document.getElementById('loginGate').style.display = 'none';
+    document.getElementById('loginErr').style.display = 'none';
+  } else {
+    document.getElementById('loginErr').style.display = 'block';
+    document.getElementById('loginPw').value = '';
+    document.getElementById('loginPw').focus();
+  }
+}
+
+// Auto-login if already authenticated this session
+if (sessionStorage.getItem(AUTH_KEY) === '1') {
+  document.getElementById('loginGate').style.display = 'none';
+}
+</script>
+
+<div class="header">
+  <h1>급여 파서<em>v1.0</em></h1>
+  <div class="badge" id="dbBadge">0건</div>
+</div>
+
+<div class="tabs">
+  <button class="tab active" onclick="switchTab('parse')">파싱</button>
+  <button class="tab" onclick="switchTab('data')">전체 데이터</button>
+  <button class="tab" onclick="switchTab('summary')">연도 요약</button>
+  <button class="tab" onclick="switchTab('settings')">설정</button>
+</div>
+
+<div class="wrap">
+  <div class="panel active" id="panel-parse">
+    <div class="card">
+      <div class="card-title">SMS 명세서 붙여넣기</div>
+      <textarea id="smsInput" placeholder="급여 명세서 문자를 여기에 붙여넣으세요.&#10;여러 건을 한꺼번에 붙여넣어도 자동으로 분리됩니다."></textarea>
+      <div class="btn-row">
+        <button class="btn btn-primary" onclick="parseSMS()">파싱 실행</button>
+        <button class="btn btn-outline" onclick="clearInput()">초기화</button>
+      </div>
+    </div>
+    <div id="parseResults"></div>
+  </div>
+
+  <div class="panel" id="panel-data">
+    <div class="filter-row">
+      <select id="filterYear" onchange="renderTable()">
+        <option value="">전체 연도</option>
+      </select>
+      <select id="filterType" onchange="renderTable()">
+        <option value="">전체 구분</option>
+        <option value="급여">급여</option>
+        <option value="PI">PI</option>
+        <option value="PS">PS</option>
+        <option value="격려금">격려금</option>
+        <option value="성과급">성과급</option>
+        <option value="기타">기타</option>
+      </select>
+      <button class="btn btn-success btn-sm" onclick="downloadXlsx()">Excel 다운로드</button>
+    </div>
+    <div class="table-wrap" id="dataTable"></div>
+  </div>
+
+  <div class="panel" id="panel-summary">
+    <div class="stats-row" id="totalStats"></div>
+    <div class="table-wrap" id="summaryTable"></div>
+  </div>
+
+  <div class="panel" id="panel-settings">
+    <div class="card">
+      <div class="card-title">데이터 관리</div>
+      <p style="font-size:14px;color:#666;margin-bottom:14px;">
+        모든 데이터는 브라우저 localStorage에 저장됩니다.<br>
+        주기적으로 Excel 다운로드로 백업하세요.
+      </p>
+      <div class="btn-row">
+        <button class="btn btn-success" onclick="downloadXlsx()">Excel 백업</button>
+        <button class="btn btn-outline" onclick="exportJSON()">JSON 내보내기</button>
+      </div>
+      <div class="btn-row" style="margin-top:14px;">
+        <button class="btn btn-outline" onclick="document.getElementById('jsonImport').click()">JSON 가져오기</button>
+        <input type="file" id="jsonImport" accept=".json" style="display:none" onchange="importJSON(event)">
+        <button class="btn btn-danger" onclick="confirmClear()">전체 삭제</button>
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-title">저장 현황</div>
+      <div id="settingsStats" style="font-size:14px;color:#444;"></div>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+
+// ════════════════════════════════════════
+// DB (localStorage)
+// ════════════════════════════════════════
+const DB_KEY = 'payroll_db_v1';
+
+function loadDB() {
+  try { return JSON.parse(localStorage.getItem(DB_KEY)) || []; }
+  catch { return []; }
+}
+
+function saveDB(data) {
+  localStorage.setItem(DB_KEY, JSON.stringify(data));
+  updateBadge();
+}
+
+function updateBadge() {
+  const db = loadDB();
+  document.getElementById('dbBadge').textContent = db.length + '건 저장';
+}
+
+// ════════════════════════════════════════
+// SMS Parser
+// ════════════════════════════════════════
+function parseSMS() {
+  const raw = document.getElementById('smsInput').value.trim();
+  if (!raw) { toast('텍스트를 붙여넣어 주세요'); return; }
+
+  const blocks = raw.split(/\[Web발신\]/).filter(b => b.trim());
+  const parsed = [];
+
+  for (const block of blocks) {
+    if (block.includes('의료비 담당')) continue;
+    const rec = parseBlock(block);
+    if (rec && rec.총지급액 > 0) parsed.push(rec);
+  }
+
+  if (parsed.length === 0) {
+    toast('파싱 가능한 명세서가 없습니다');
+    return;
+  }
+
+  // Deduplicate and save
+  const db = loadDB();
+  let newCount = 0, updateCount = 0;
+  const results = [];
+
+  for (const rec of parsed) {
+    const key = `${rec.연도}-${rec.월}-${rec.구분}`;
+    const idx = db.findIndex(d => `${d.연도}-${d.월}-${d.구분}` === key);
+
+    if (idx >= 0) {
+      const existing = db[idx];
+      const changed = existing.총지급액 !== rec.총지급액 || existing.차인지급액 !== rec.차인지급액;
+      if (changed) {
+        db[idx] = rec;
+        updateCount++;
+        results.push({ rec, status: 'updated', old: existing });
+      } else {
+        results.push({ rec, status: 'exists' });
+      }
+    } else {
+      db.push(rec);
+      newCount++;
+      results.push({ rec, status: 'new' });
+    }
+  }
+
+  // Sort DB
+  db.sort((a, b) => (a.연도 - b.연도) || (a.월 - b.월) || a.구분.localeCompare(b.구분));
+  saveDB(db);
+  renderParseResults(results);
+  toast(`${parsed.length}건 파싱 완료 (신규 ${newCount}, 갱신 ${updateCount})`);
+}
+
+function parseBlock(block) {
+  const rec = {};
+
+  // Year/Month
+  const ym = block.match(/(\d{4})년\s*(\d{1,2})월/);
+  if (ym) {
+    rec.연도 = +ym[1];
+    rec.월 = +ym[2];
+  } else {
+    const y = block.match(/(\d{4})년/);
+    if (y) rec.연도 = +y[1];
+    else return null;
+    rec.월 = 0;
+  }
+
+  // Type detection (from pre-header section)
+  const preHeader = block.split(/급여개요/)[0] || block.substring(0, 300);
+  if (/급여,PS,특별성과급/.test(preHeader)) rec.구분 = 'PS/급여';
+  else if (/PS,특별성과급/.test(preHeader)) rec.구분 = 'PS';
+  else if (/PS\s*(지급|명세)/.test(preHeader) && !/급여명세/.test(preHeader)) rec.구분 = 'PS';
+  else if (/위기\s*극복\s*격려금/.test(preHeader)) rec.구분 = '격려금';
+  else if (/One\s*Team\s*Mind|ONE\s*TEAM/i.test(preHeader)) rec.구분 = '격려금';
+  else if (/추석\s*특별격려금/.test(preHeader)) rec.구분 = '격려금';
+  else if (/특별격려금|격려금\s*(지급|명세)/.test(preHeader)) rec.구분 = '격려금';
+  else if (/AI시대.*격려금/.test(preHeader)) rec.구분 = '격려금';
+  else if (/특별성과급\s*(지급|명세)/.test(preHeader) && !/PS/.test(preHeader)) rec.구분 = '성과급';
+  else if (/특별축하금/.test(preHeader)) rec.구분 = '축하금';
+  else if (/기여금/.test(preHeader)) rec.구분 = '기여금';
+  else if (/PI\s*(지급|명세)|상반기\s*PI|하반기\s*PI/.test(preHeader) && !/급여명세/.test(preHeader)) rec.구분 = 'PI';
+  else if (/Talent\s*Bonus/.test(block)) rec.구분 = '급여';
+  else rec.구분 = '급여';
+
+  // Core amounts
+  rec.총지급액 = extractNum(block, /총지급액\s*[:：]\s*([\-\d,]+)/);
+  rec.공제계 = extractNum(block, /공제계\s*[:：]\s*(-?[\-\d,]+)/);
+  rec.저축상환 = extractNum(block, /저축\/상환\s*[:：]\s*([\-\d,]+)/);
+  rec.차인지급액 = extractNum(block, /차인지급액\s*[:：]\s*([\-\d,]+)/);
+
+  // Pay items
+  const paySection = (block.match(/지급내역([\s\S]*?)(?:공제내역|$)/) || [])[1] || '';
+  const dedSection = (block.match(/공제내역([\s\S]*?)(?:연차내역|누계액|문의|$)/) || [])[1] || '';
+
+  rec.기본급 = extractItem(paySection, '기본급');
+  rec.고정OT = extractItem(paySection, '고정시간외수당');
+  rec.업적급 = extractItem(paySection, '업적급');
+  rec.연금보조 = extractItem(paySection, '연금보조');
+
+  // Overtime/holiday/backpay/annual leave
+  rec.연장휴일소급연차 = 0;
+  for (const label of ['평일연장근로수당', '휴일근무수당', '소급금', '연차수당']) {
+    rec.연장휴일소급연차 += extractItem(paySection, label);
+  }
+
+  // Bonuses (PS/PI/격려금 등)
+  rec.성과급 = 0;
+  for (const label of ['PS', 'PI', '생산성 인센티브', '특별격려금', '격려금', '특별성과급', '특별축하금',
+                         '미래성장 특별 기여금', '명절격려금', '위기 극복 격려금', 'Talent Bonus',
+                         '추석 특별격려금']) {
+    rec.성과급 += extractItem(paySection, label);
+  }
+
+  // Benefits/points/others
+  const knownPay = rec.기본급 + rec.고정OT + rec.업적급 + rec.연금보조 + rec.연장휴일소급연차 + rec.성과급;
+  rec.복리후생기타 = rec.총지급액 - knownPay;
+  if (Math.abs(rec.복리후생기타) < 0 && rec.복리후생기타 < 0) rec.복리후생기타 = 0;
+
+  // Deductions
+  const tax = extractItem(dedSection, '소득세') || 0;
+  const taxYS = extractItem(dedSection, '소득세\\(연말정산\\)') || 0;
+  rec.소득세 = tax + taxYS;
+
+  const localTax = extractItem(dedSection, '지방소득세') || 0;
+  const localTaxYS = extractItem(dedSection, '지방소득세\\(연말정산\\)') || extractItem(dedSection, '지방소득세\\(연말정산\\)') || 0;
+  rec.지방세 = localTax + localTaxYS;
+
+  rec.국민연금 = extractItem(dedSection, '국민연금');
+
+  const hi = extractItem(dedSection, '건강보험료') || 0;
+  const hiAdj = extractItem(dedSection, '건강보험료 정산') || 0;
+  rec.건강보험 = hi + hiAdj;
+
+  rec.고용보험 = extractItem(dedSection, '고용보험');
+  const ysEmp = extractItem(dedSection, '연말과표 고용보험') || 0;
+  rec.고용보험 += ysEmp;
+
+  // Other deductions detail
+  rec.기타공제 = rec.공제계 - (rec.소득세 + rec.지방세 + rec.국민연금 + rec.건강보험 + rec.고용보험);
+
+  // Annual leave
+  const alMatch = block.match(/잔여연차\s*[:：]\s*([\d.]+)/);
+  rec.잔여연차 = alMatch ? parseFloat(alMatch[1]) : null;
+
+  // Deduction detail items for reference
+  rec.공제상세 = {};
+  const dedItems = dedSection.matchAll(/([가-힣A-Za-z\-&\/\(\) ]+)\s*[:：]\s*(-?[\d,]+)/g);
+  for (const m of dedItems) {
+    rec.공제상세[m[1].trim()] = parseKRW(m[2]);
+  }
+
+  // Pay detail items
+  rec.지급상세 = {};
+  const payItems = paySection.matchAll(/([가-힣A-Za-z\-&\/\(\) ]+)\s*[:：]\s*(-?[\d,]+)/g);
+  for (const m of payItems) {
+    rec.지급상세[m[1].trim()] = parseKRW(m[2]);
+  }
+
+  return rec;
+}
+
+function extractNum(text, regex) {
+  const m = text.match(regex);
+  return m ? parseKRW(m[1]) : 0;
+}
+
+function extractItem(section, label) {
+  const regex = new RegExp(label.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '\\s*[:：]\\s*(-?[\\d,]+)');
+  const m = section.match(regex);
+  return m ? parseKRW(m[1]) : 0;
+}
+
+function parseKRW(s) {
+  if (!s) return 0;
+  s = s.replace(/[,₩\s　]/g, '');
+  if (!s || s === '-') return 0;
+  return parseInt(s) || 0;
+}
+
+function formatKRW(n) {
+  if (n === null || n === undefined) return '-';
+  if (n === 0) return '-';
+  const abs = Math.abs(n);
+  const formatted = abs.toLocaleString('ko-KR');
+  return n < 0 ? '-' + formatted : formatted;
+}
+
+function formatMan(n) {
+  if (!n) return '-';
+  return (n / 10000).toFixed(0) + '만';
+}
+
+// ════════════════════════════════════════
+// Render Parse Results
+// ════════════════════════════════════════
+function renderParseResults(results) {
+  const container = document.getElementById('parseResults');
+  container.innerHTML = '';
+
+  for (const { rec, status, old } of results) {
+    const div = document.createElement('div');
+    div.className = 'parse-result';
+
+    const statusMap = {
+      'new': ['result-new', '✚ 신규 등록'],
+      'exists': ['result-match', '✓ 기존 일치'],
+      'updated': ['result-mismatch', '⟲ 갱신됨']
+    };
+    const [cls, label] = statusMap[status];
+
+    div.innerHTML = `
+      <div class="result-header ${cls}">
+        <span>${rec.연도}.${String(rec.월).padStart(2,'0')} ${rec.구분}</span>
+        <span>${label}</span>
+      </div>
+      <div class="result-body">
+        <div class="result-grid">
+          <dt>총지급액</dt><dd>${formatKRW(rec.총지급액)}</dd>
+          <dt>기본급</dt><dd>${formatKRW(rec.기본급)}</dd>
+          <dt>공제계</dt><dd>${formatKRW(rec.공제계)}</dd>
+          <dt>고정OT</dt><dd>${formatKRW(rec.고정OT)}</dd>
+          <dt>차인지급액</dt><dd style="font-weight:800;color:var(--primary)">${formatKRW(rec.차인지급액)}</dd>
+          <dt>업적급</dt><dd>${formatKRW(rec.업적급)}</dd>
+          ${rec.성과급 ? `<dt>성과급</dt><dd style="color:var(--accent)">${formatKRW(rec.성과급)}</dd>` : ''}
+          ${rec.잔여연차 !== null ? `<dt>잔여연차</dt><dd>${rec.잔여연차}개</dd>` : ''}
+        </div>
+        ${status === 'updated' ? `<p style="margin-top:8px;font-size:11px;color:var(--danger)">이전: 총지급 ${formatKRW(old.총지급액)} / 차인 ${formatKRW(old.차인지급액)}</p>` : ''}
+      </div>`;
+    container.appendChild(div);
+  }
+}
+
+// ════════════════════════════════════════
+// Data Table
+// ════════════════════════════════════════
+function renderTable() {
+  let db = loadDB();
+  const yearFilter = document.getElementById('filterYear').value;
+  const typeFilter = document.getElementById('filterType').value;
+
+  if (yearFilter) db = db.filter(d => d.연도 === +yearFilter);
+  if (typeFilter) db = db.filter(d => d.구분.includes(typeFilter));
+
+  if (db.length === 0) {
+    document.getElementById('dataTable').innerHTML = `
+      <div class="empty-state"><div class="icon">📭</div><p>데이터가 없습니다.<br>SMS를 붙여넣어 파싱해 주세요.</p></div>`;
+    return;
+  }
+
+  const cols = ['연도','월','구분','기본급','고정OT','업적급','연금보조','연장휴일소급연차','성과급','복리후생기타','총지급액','소득세','지방세','국민연금','건강보험','고용보험','기타공제','공제계','저축상환','차인지급액'];
+  const labels = ['연도','월','구분','기본급','고정OT','업적급','연금보조','연장/소급','성과급','복리/기타','총지급액','소득세','지방세','국민연금','건강보험','고용보험','기타공제','공제계','저축','실수령'];
+
+  let html = '<table><thead><tr>';
+  for (const l of labels) html += `<th>${l}</th>`;
+  html += '<th>삭제</th></tr></thead><tbody>';
+
+  let prevYear = null;
+  for (const row of db) {
+    const yearClass = row.연도 !== prevYear && prevYear !== null ? ' class="year-start"' : '';
+    prevYear = row.연도;
+    html += `<tr${yearClass}>`;
+    for (const col of cols) {
+      const v = row[col];
+      if (typeof v === 'number' && col !== '연도' && col !== '월') {
+        html += `<td${v < 0 ? ' class="neg"' : ''}>${formatKRW(v)}</td>`;
+      } else {
+        html += `<td>${v ?? '-'}</td>`;
+      }
+    }
+    html += `<td><button class="btn btn-danger btn-sm" onclick="deleteRecord(${row.연도},${row.월},'${row.구분}')">✕</button></td>`;
+    html += '</tr>';
+  }
+  html += '</tbody></table>';
+  document.getElementById('dataTable').innerHTML = html;
+}
+
+function deleteRecord(y, m, t) {
+  if (!confirm(`${y}.${m} ${t} 삭제하시겠습니까?`)) return;
+  let db = loadDB();
+  db = db.filter(d => !(d.연도 === y && d.월 === m && d.구분 === t));
+  saveDB(db);
+  renderTable();
+  toast('삭제 완료');
+}
+
+// ════════════════════════════════════════
+// Summary
+// ════════════════════════════════════════
+function renderSummary() {
+  const db = loadDB();
+  if (db.length === 0) {
+    document.getElementById('totalStats').innerHTML = '';
+    document.getElementById('summaryTable').innerHTML = `
+      <div class="empty-state"><div class="icon">📊</div><p>데이터가 없습니다.</p></div>`;
+    return;
+  }
+
+  // Totals
+  const totGross = db.reduce((s, d) => s + (d.총지급액 || 0), 0);
+  const totNet = db.reduce((s, d) => s + (d.차인지급액 || 0), 0);
+  const totBonus = db.reduce((s, d) => s + (d.성과급 || 0), 0);
+
+  document.getElementById('totalStats').innerHTML = `
+    <div class="stat-card">
+      <div class="stat-label">누적 총지급</div>
+      <div class="stat-value">${(totGross / 100000000).toFixed(1)}억</div>
+      <div class="stat-sub">${db.length}건</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">누적 실수령</div>
+      <div class="stat-value">${(totNet / 100000000).toFixed(1)}억</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">누적 성과급</div>
+      <div class="stat-value">${(totBonus / 100000000).toFixed(1)}억</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">평균 실효세율</div>
+      <div class="stat-value">${((1 - totNet / (totGross || 1)) * 100).toFixed(1)}%</div>
+      <div class="stat-sub">저축 포함</div>
+    </div>`;
+
+  // Annual summary
+  const annual = {};
+  for (const d of db) {
+    if (!annual[d.연도]) annual[d.연도] = { gross: 0, bonus: 0, ded: 0, save: 0, net: 0, baseLast: 0, cnt: 0 };
+    const a = annual[d.연도];
+    a.gross += d.총지급액 || 0;
+    a.bonus += d.성과급 || 0;
+    a.ded += d.공제계 || 0;
+    a.save += d.저축상환 || 0;
+    a.net += d.차인지급액 || 0;
+    a.cnt++;
+    if (d.기본급 > 0) a.baseLast = d.기본급;
+  }
+
+  const years = Object.keys(annual).sort();
+  let html = '<table><thead><tr><th>연도</th><th>총지급</th><th>성과급</th><th>공제합</th><th>저축</th><th>실수령</th><th>실효세율</th><th>기본급</th><th>YoY</th></tr></thead><tbody>';
+
+  let prevNet = null;
+  for (const yr of years) {
+    const a = annual[yr];
+    const taxRate = a.gross > 0 ? ((a.gross - a.net - a.save) / a.gross * 100).toFixed(1) : '-';
+    const yoy = prevNet ? ((a.net - prevNet) / prevNet * 100).toFixed(1) : '-';
+    html += `<tr>
+      <td>${yr}</td>
+      <td>${formatMan(a.gross)}</td>
+      <td>${formatMan(a.bonus)}</td>
+      <td>${formatMan(a.ded)}</td>
+      <td>${formatMan(a.save)}</td>
+      <td style="font-weight:700">${formatMan(a.net)}</td>
+      <td>${taxRate}%</td>
+      <td>${formatMan(a.baseLast)}</td>
+      <td${yoy !== '-' && parseFloat(yoy) > 0 ? ' style="color:var(--success)"' : yoy !== '-' && parseFloat(yoy) < 0 ? ' style="color:var(--danger)"' : ''}>${yoy !== '-' ? (parseFloat(yoy) > 0 ? '+' : '') + yoy + '%' : '-'}</td>
+    </tr>`;
+    prevNet = a.net;
+  }
+  html += '</tbody></table>';
+  document.getElementById('summaryTable').innerHTML = html;
+}
+
+// ════════════════════════════════════════
+// Excel Download
+// ════════════════════════════════════════
+function downloadXlsx() {
+  const db = loadDB();
+  if (db.length === 0) { toast('다운로드할 데이터가 없습니다'); return; }
+
+  const wb = XLSX.utils.book_new();
+
+  // Sheet 1: 전체 데이터
+  const cols = ['연도','월','구분','기본급','고정OT','업적급','연금보조','연장휴일소급연차','성과급','복리후생기타','총지급액','소득세','지방세','국민연금','건강보험','고용보험','기타공제','공제계','저축상환','차인지급액'];
+  const headers = ['연도','월','구분','기본급','고정OT','업적급','연금보조','연장/휴일/소급/연차','성과급(PS/PI/격려금)','복리후생/기타','총지급액','소득세(정산포함)','지방세(정산포함)','국민연금','건강보험(정산포함)','고용보험','기타공제','공제계','저축/상환','차인지급액'];
+
+  const wsData = [headers];
+  for (const d of db) {
+    wsData.push(cols.map(c => d[c] ?? ''));
+  }
+  const ws1 = XLSX.utils.aoa_to_sheet(wsData);
+
+  // Set column widths
+  ws1['!cols'] = headers.map(h => ({ wch: Math.max(h.length * 2, 10) }));
+  XLSX.utils.book_append_sheet(wb, ws1, '전체급여내역');
+
+  // Sheet 2: 연도별 요약
+  const annual = {};
+  for (const d of db) {
+    if (!annual[d.연도]) annual[d.연도] = { gross: 0, bonus: 0, ded: 0, save: 0, net: 0, base: 0 };
+    const a = annual[d.연도];
+    a.gross += d.총지급액 || 0;
+    a.bonus += d.성과급 || 0;
+    a.ded += d.공제계 || 0;
+    a.save += d.저축상환 || 0;
+    a.net += d.차인지급액 || 0;
+    if (d.기본급 > 0) a.base = d.기본급;
+  }
+  const sumData = [['연도','총지급액','성과급','공제합계','저축/상환','차인지급액','기본급(최종)']];
+  for (const yr of Object.keys(annual).sort()) {
+    const a = annual[yr];
+    sumData.push([+yr, a.gross, a.bonus, a.ded, a.save, a.net, a.base]);
+  }
+  const ws2 = XLSX.utils.aoa_to_sheet(sumData);
+  ws2['!cols'] = sumData[0].map(h => ({ wch: 16 }));
+  XLSX.utils.book_append_sheet(wb, ws2, '연도별요약');
+
+  // Sheet 3: 공제 상세
+  const detData = [['연도','월','구분','항목','금액']];
+  for (const d of db) {
+    if (d.공제상세) {
+      for (const [k, v] of Object.entries(d.공제상세)) {
+        if (v !== 0) detData.push([d.연도, d.월, d.구분, k, v]);
+      }
+    }
+  }
+  const ws3 = XLSX.utils.aoa_to_sheet(detData);
+  ws3['!cols'] = [{ wch: 6 }, { wch: 4 }, { wch: 8 }, { wch: 24 }, { wch: 14 }];
+  XLSX.utils.book_append_sheet(wb, ws3, '공제상세');
+
+  // Sheet 4: 지급 상세
+  const payDetData = [['연도','월','구분','항목','금액']];
+  for (const d of db) {
+    if (d.지급상세) {
+      for (const [k, v] of Object.entries(d.지급상세)) {
+        if (v !== 0) payDetData.push([d.연도, d.월, d.구분, k, v]);
+      }
+    }
+  }
+  const ws4 = XLSX.utils.aoa_to_sheet(payDetData);
+  ws4['!cols'] = [{ wch: 6 }, { wch: 4 }, { wch: 8 }, { wch: 24 }, { wch: 14 }];
+  XLSX.utils.book_append_sheet(wb, ws4, '지급상세');
+
+  const now = new Date();
+  const fname = `급여내역_${now.getFullYear()}${String(now.getMonth()+1).padStart(2,'0')}${String(now.getDate()).padStart(2,'0')}.xlsx`;
+  XLSX.writeFile(wb, fname);
+  toast('Excel 다운로드 완료');
+}
+
+// ════════════════════════════════════════
+// JSON Import/Export
+// ════════════════════════════════════════
+function exportJSON() {
+  const db = loadDB();
+  const blob = new Blob([JSON.stringify(db, null, 2)], { type: 'application/json' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = `payroll_backup_${new Date().toISOString().slice(0,10)}.json`;
+  a.click();
+  toast('JSON 내보내기 완료');
+}
+
+function importJSON(e) {
+  const file = e.target.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = function(ev) {
+    try {
+      const data = JSON.parse(ev.target.result);
+      if (!Array.isArray(data)) throw new Error('배열이 아닙니다');
+      const db = loadDB();
+      let added = 0;
+      for (const rec of data) {
+        if (!rec.연도 || !rec.구분) continue;
+        const key = `${rec.연도}-${rec.월}-${rec.구분}`;
+        if (!db.find(d => `${d.연도}-${d.월}-${d.구분}` === key)) {
+          db.push(rec);
+          added++;
+        }
+      }
+      db.sort((a, b) => (a.연도 - b.연도) || (a.월 - b.월));
+      saveDB(db);
+      toast(`${added}건 가져오기 완료 (중복 ${data.length - added}건 스킵)`);
+      refreshAll();
+    } catch (err) {
+      toast('JSON 파일 형식 오류: ' + err.message);
+    }
+  };
+  reader.readAsText(file);
+  e.target.value = '';
+}
+
+function confirmClear() {
+  if (confirm('정말 전체 데이터를 삭제하시겠습니까?\n이 작업은 되돌릴 수 없습니다.')) {
+    if (confirm('마지막 확인: Excel 백업은 하셨나요?')) {
+      localStorage.removeItem(DB_KEY);
+      updateBadge();
+      refreshAll();
+      toast('전체 데이터 삭제 완료');
+    }
+  }
+}
+
+// ════════════════════════════════════════
+// UI Helpers
+// ════════════════════════════════════════
+function switchTab(name) {
+  document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+  document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
+  document.getElementById('panel-' + name).classList.add('active');
+  event.target.classList.add('active');
+
+  if (name === 'data') { updateFilterYears(); renderTable(); }
+  if (name === 'summary') renderSummary();
+  if (name === 'settings') renderSettings();
+}
+
+function updateFilterYears() {
+  const db = loadDB();
+  const years = [...new Set(db.map(d => d.연도))].sort();
+  const sel = document.getElementById('filterYear');
+  const cur = sel.value;
+  sel.innerHTML = '<option value="">전체 연도</option>';
+  for (const y of years) {
+    sel.innerHTML += `<option value="${y}"${y == cur ? ' selected' : ''}>${y}년</option>`;
+  }
+}
+
+function renderSettings() {
+  const db = loadDB();
+  const years = [...new Set(db.map(d => d.연도))].sort();
+  const types = {};
+  for (const d of db) types[d.구분] = (types[d.구분] || 0) + 1;
+
+  let html = `<p>총 <strong>${db.length}건</strong> 저장됨</p>`;
+  if (years.length > 0) {
+    html += `<p>기간: ${years[0]}년 ~ ${years[years.length-1]}년</p>`;
+    html += `<p>구분별: ${Object.entries(types).map(([k,v]) => `${k}(${v})`).join(', ')}</p>`;
+    const bytes = new Blob([JSON.stringify(db)]).size;
+    html += `<p>용량: ${(bytes / 1024).toFixed(1)} KB</p>`;
+  }
+  document.getElementById('settingsStats').innerHTML = html;
+}
+
+function clearInput() {
+  document.getElementById('smsInput').value = '';
+  document.getElementById('parseResults').innerHTML = '';
+}
+
+function refreshAll() {
+  updateFilterYears();
+  renderTable();
+  renderSummary();
+  renderSettings();
+}
+
+function toast(msg) {
+  const el = document.getElementById('toast');
+  el.textContent = msg;
+  el.classList.add('show');
+  setTimeout(() => el.classList.remove('show'), 2500);
+}
+
+// ════════════════════════════════════════
+// Init
+// ════════════════════════════════════════
+updateBadge();
+
+
+// ════════════════════════════════════════
+// Seed Data (105건 초기 데이터)
+// ════════════════════════════════════════
+const SEED_DATA = [{"연도": 2019, "월": 7, "구분": "급여", "기본급": 1711800, "고정OT": 335000, "업적급": 1491000, "연금보조": 0, "연장휴일소급연차": 0, "성과급": 0, "복리후생기타": 0, "총지급액": 3537800, "소득세": 144660, "지방세": 14460, "국민연금": 164920, "건강보험": 128440, "고용보험": 22990, "기타공제": 7500, "공제계": 482970, "저축상환": 0, "차인지급액": 3054830, "잔여연차": null, "비고": "상세내역 일부 없음", "공제상세": {}, "지급상세": {}}, {"연도": 2019, "월": 8, "구분": "급여", "기본급": 1711800, "고정OT": 335000, "업적급": 1491000, "연금보조": 53580, "연장휴일소급연차": 0, "성과급": 0, "복리후생기타": 460000, "총지급액": 3591380, "소득세": 192270, "지방세": 19220, "국민연금": 164920, "건강보험": 128440, "고용보험": 26330, "기타공제": 14500, "공제계": 545680, "저축상환": 107160, "차인지급액": 2938540, "잔여연차": null, "비고": "", "공제상세": {}, "지급상세": {}}, {"연도": 2019, "월": 9, "구분": "격려금", "기본급": 0, "고정OT": 0, "업적급": 0, "연금보조": 0, "연장휴일소급연차": 0, "성과급": 500000, "복리후생기타": 0, "총지급액": 500000, "소득세": 0, "지방세": 0, "국민연금": 0, "건강보험": 0, "고용보험": 3250, "기타공제": 0, "공제계": 3250, "저축상환": 0, "차인지급액": 496750, "잔여연차": null, "비고": "추석 특별격려금", "공제상세": {}, "지급상세": {}}, {"연도": 2019, "월": 9, "구분": "급여", "기본급": 1711800, "고정OT": 335000, "업적급": 1491000, "연금보조": 53580, "연장휴일소급연차": 0, "성과급": 0, "복리후생기타": 379550, "총지급액": 3591380, "소득세": 192270, "지방세": 19220, "국민연금": 164920, "건강보험": 128440, "고용보험": 25810, "기타공제": 44500, "공제계": 575160, "저축상환": 107160, "차인지급액": 2909060, "잔여연차": null, "비고": "", "공제상세": {}, "지급상세": {}}, {"연도": 2019, "월": 10, "구분": "급여", "기본급": 1902000, "고정OT": 335000, "업적급": 1491000, "연금보조": 53580, "연장휴일소급연차": 0, "성과급": 0, "복리후생기타": 120450, "총지급액": 3781580, "소득세": 189600, "지방세": 18960, "국민연금": 164920, "건강보험": 128440, "고용보험": 31210, "기타공제": 15300, "공제계": 548430, "저축상환": 107160, "차인지급액": 3125990, "잔여연차": null, "비고": "", "공제상세": {}, "지급상세": {}}, {"연도": 2019, "월": 11, "구분": "급여", "기본급": 1902000, "고정OT": 335000, "업적급": 1491000, "연금보조": 53580, "연장휴일소급연차": 0, "성과급": 0, "복리후생기타": 0, "총지급액": 3781580, "소득세": 181590, "지방세": 18150, "국민연금": 164920, "건강보험": 128440, "고용보험": 30250, "기타공제": 45300, "공제계": 568650, "저축상환": 107160, "차인지급액": 3105770, "잔여연차": null, "비고": "", "공제상세": {}, "지급상세": {}}, {"연도": 2019, "월": 12, "구분": "급여", "기본급": 1902000, "고정OT": 335000, "업적급": 1491000, "연금보조": 53580, "연장휴일소급연차": 0, "성과급": 0, "복리후생기타": 2000, "총지급액": 3783580, "소득세": 181590, "지방세": 18150, "국민연금": 164920, "건강보험": 128440, "고용보험": 30260, "기타공제": 15300, "공제계": 538660, "저축상환": 107160, "차인지급액": 3137760, "잔여연차": null, "비고": "", "공제상세": {}, "지급상세": {}}, {"연도": 2019, "월": 12, "구분": "PI", "기본급": 0, "고정OT": 0, "업적급": 0, "연금보조": 0, "연장휴일소급연차": 0, "성과급": 2237000, "복리후생기타": 0, "총지급액": 2237000, "소득세": 284700, "지방세": 28470, "국민연금": 0, "건강보험": 0, "고용보험": 17890, "기타공제": 0, "공제계": 331060, "저축상환": 0, "차인지급액": 1905940, "잔여연차": null, "비고": "19년 하반기 PI", "공제상세": {}, "지급상세": {}}, {"연도": 2020, "월": 1, "구분": "급여", "기본급": 1902000, "고정OT": 335000, "업적급": 1491000, "연금보조": 53580, "연장휴일소급연차": 145650, "성과급": 0, "복리후생기타": 150000, "총지급액": 3927230, "소득세": 182950, "지방세": 18290, "국민연금": 164920, "건강보험": 134740, "고용보험": 32610, "기타공제": 45300, "공제계": 578810, "저축상환": 107160, "차인지급액": 3241260, "잔여연차": null, "비고": "", "공제상세": {}, "지급상세": {}}, {"연도": 2020, "월": 1, "구분": "기여금", "기본급": 0, "고정OT": 0, "업적급": 0, "연금보조": 0, "연장휴일소급연차": 0, "성과급": 2684160, "복리후생기타": 0, "총지급액": 2684160, "소득세": 146400, "지방세": 14640, "국민연금": 0, "건강보험": 0, "고용보험": 21470, "기타공제": 0, "공제계": 182510, "저축상환": 0, "차인지급액": 2501650, "잔여연차": null, "비고": "미래성장 특별 기여금", "공제상세": {}, "지급상세": {}}, {"연도": 2020, "월": 2, "구분": "급여", "기본급": 1902000, "고정OT": 335000, "업적급": 1491000, "연금보조": 53580, "연장휴일소급연차": 294410, "성과급": 0, "복리후생기타": 200000, "총지급액": 4076990, "소득세": -1164850, "지방세": -116440, "국민연금": 164920, "건강보험": 134740, "고용보험": 34200, "기타공제": 15300, "공제계": -932130, "저축상환": 107160, "차인지급액": 4901960, "잔여연차": null, "비고": "연말정산 환급", "공제상세": {}, "지급상세": {}}, {"연도": 2020, "월": 3, "구분": "급여", "기본급": 1902000, "고정OT": 335000, "업적급": 1491000, "연금보조": 53580, "연장휴일소급연차": 203040, "성과급": 0, "복리후생기타": 1074470, "총지급액": 3984620, "소득세": 208990, "지방세": 20890, "국민연금": 164920, "건강보험": 134740, "고용보험": 40470, "기타공제": 15300, "공제계": 585310, "저축상환": 107160, "차인지급액": 3292150, "잔여연차": null, "비고": "", "공제상세": {}, "지급상세": {}}, {"연도": 2020, "월": 4, "구분": "급여", "기본급": 1902000, "고정OT": 335000, "업적급": 1491000, "연금보조": 53580, "연장휴일소급연차": 88120, "성과급": 0, "복리후생기타": 0, "총지급액": 3869700, "소득세": 107480, "지방세": 10740, "국민연금": 164920, "건강보험": 301160, "고용보험": 30950, "기타공제": 15300, "공제계": 630550, "저축상환": 107160, "차인지급액": 3131990, "잔여연차": null, "비고": "", "공제상세": {}, "지급상세": {}}, {"연도": 2020, "월": 5, "구분": "급여", "기본급": 1902000, "고정OT": 335000, "업적급": 1491000, "연금보조": 53580, "연장휴일소급연차": 10160, "성과급": 0, "복리후생기타": 122683, "총지급액": 3791740, "소득세": 112370, "지방세": 11230, "국민연금": 164920, "건강보험": 168860, "고용보험": 31310, "기타공제": 15300, "공제계": 503990, "저축상환": 107160, "차인지급액": 3180590, "잔여연차": null, "비고": "", "공제상세": {}, "지급상세": {}}, {"연도": 2020, "월": 6, "구분": "급여", "기본급": 1902000, "고정OT": 335000, "업적급": 1491000, "연금보조": 53580, "연장휴일소급연차": 125350, "성과급": 0, "복리후생기타": 173847, "총지급액": 4026930, "소득세": 134370, "지방세": 13430, "국민연금": 164920, "건강보험": 168860, "고용보험": 32640, "기타공제": 15300, "공제계": 529520, "저축상환": 107160, "차인지급액": 3390250, "잔여연차": null, "비고": "", "공제상세": {}, "지급상세": {}}, {"연도": 2020, "월": 6, "구분": "PI", "기본급": 0, "고정OT": 0, "업적급": 0, "연금보조": 0, "연장휴일소급연차": 0, "성과급": 2237000, "복리후생기타": 0, "총지급액": 2237000, "소득세": 284700, "지방세": 28470, "국민연금": 0, "건강보험": 0, "고용보험": 17890, "기타공제": 0, "공제계": 331060, "저축상환": 0, "차인지급액": 1905940, "잔여연차": null, "비고": "20년 상반기 PI", "공제상세": {}, "지급상세": {}}, {"연도": 2020, "월": 7, "구분": "급여", "기본급": 1902000, "고정OT": 335000, "업적급": 1491000, "연금보조": 53580, "연장휴일소급연차": 213200, "성과급": 0, "복리후생기타": 0, "총지급액": 3994780, "소득세": 122150, "지방세": 12210, "국민연금": 189000, "건강보험": 168860, "고용보험": 31950, "기타공제": 49300, "공제계": 573470, "저축상환": 107160, "차인지급액": 3314150, "잔여연차": null, "비고": "", "공제상세": {}, "지급상세": {}}, {"연도": 2020, "월": 8, "구분": "급여", "기본급": 1945000, "고정OT": 343000, "업적급": 1525000, "연금보조": 53580, "연장휴일소급연차": 753650, "성과급": 0, "복리후생기타": 0, "총지급액": 4620230, "소득세": 117260, "지방세": 11720, "국민연금": 189000, "건강보험": 168860, "고용보험": 31590, "기타공제": 142820, "공제계": 661250, "저축상환": 107160, "차인지급액": 3851820, "잔여연차": null, "비고": "소급금 포함", "공제상세": {}, "지급상세": {}}, {"연도": 2020, "월": 9, "구분": "급여", "기본급": 1973000, "고정OT": 347000, "업적급": 1547000, "연금보조": 55540, "연장휴일소급연차": 702010, "성과급": 0, "복리후생기타": 0, "총지급액": 4624550, "소득세": 136820, "지방세": 13680, "국민연금": 189000, "건강보험": 168860, "고용보험": 32920, "기타공제": 122170, "공제계": 663450, "저축상환": 111080, "차인지급액": 3850020, "잔여연차": null, "비고": "소급금 포함", "공제상세": {}, "지급상세": {}}, {"연도": 2020, "월": 10, "구분": "급여", "기본급": 1973000, "고정OT": 347000, "업적급": 1547000, "연금보조": 55540, "연장휴일소급연차": 301960, "성과급": 0, "복리후생기타": 4000, "총지급액": 4228500, "소득세": 151490, "지방세": 15140, "국민연금": 189000, "건강보험": 168860, "고용보험": 33820, "기타공제": 49700, "공제계": 608010, "저축상환": 111080, "차인지급액": 3509410, "잔여연차": null, "비고": "", "공제상세": {}, "지급상세": {}}, {"연도": 2020, "월": 11, "구분": "급여", "기본급": 1973000, "고정OT": 347000, "업적급": 1547000, "연금보조": 55540, "연장휴일소급연차": 344080, "성과급": 0, "복리후생기타": 0, "총지급액": 4266620, "소득세": 156380, "지방세": 15630, "국민연금": 189000, "건강보험": 168860, "고용보험": 34130, "기타공제": 49700, "공제계": 613700, "저축상환": 111080, "차인지급액": 3541840, "잔여연차": null, "비고": "", "공제상세": {}, "지급상세": {}}, {"연도": 2020, "월": 12, "구분": "급여", "기본급": 1973000, "고정OT": 347000, "업적급": 1547000, "연금보조": 55540, "연장휴일소급연차": 494850, "성과급": 0, "복리후생기타": 1160260, "총지급액": 5577650, "소득세": 325090, "지방세": 32500, "국민연금": 189000, "건강보험": 168860, "고용보험": 44620, "기타공제": 49700, "공제계": 809770, "저축상환": 111080, "차인지급액": 4656800, "잔여연차": null, "비고": "연차/의료비 포함", "공제상세": {}, "지급상세": {}}, {"연도": 2020, "월": 12, "구분": "PI", "기본급": 0, "고정OT": 0, "업적급": 0, "연금보조": 0, "연장휴일소급연차": 0, "성과급": 2320000, "복리후생기타": 0, "총지급액": 2320000, "소득세": 295200, "지방세": 29520, "국민연금": 0, "건강보험": 0, "고용보험": 18560, "기타공제": 0, "공제계": 343280, "저축상환": 0, "차인지급액": 1976720, "잔여연차": null, "비고": "20년 하반기 PI", "공제상세": {}, "지급상세": {}}, {"연도": 2021, "월": 1, "구분": "급여", "기본급": 1973000, "고정OT": 347000, "업적급": 1547000, "연금보조": 55540, "연장휴일소급연차": 0, "성과급": 0, "복리후생기타": 507991, "총지급액": 3930540, "소득세": 151490, "지방세": 15140, "국민연금": 189000, "건강보험": 175670, "고용보험": 35440, "기타공제": 95700, "공제계": 662440, "저축상환": 111080, "차인지급액": 3157020, "잔여연차": null, "비고": "", "공제상세": {}, "지급상세": {}}, {"연도": 2021, "월": 2, "구분": "PS", "기본급": 0, "고정OT": 0, "업적급": 0, "연금보조": 0, "연장휴일소급연차": 0, "성과급": 9280800, "복리후생기타": 0, "총지급액": 9280800, "소득세": 1181100, "지방세": 118110, "국민연금": 0, "건강보험": 0, "고용보험": 74240, "기타공제": 0, "공제계": 1373450, "저축상환": 0, "차인지급액": 7907350, "잔여연차": null, "비고": "2020년 PS", "공제상세": {}, "지급상세": {}}, {"연도": 2021, "월": 2, "구분": "급여", "기본급": 1973000, "고정OT": 347000, "업적급": 1547000, "연금보조": 55540, "연장휴일소급연차": 0, "성과급": 0, "복리후생기타": 1303001, "총지급액": 3925540, "소득세": -1262850, "지방세": -126210, "국민연금": 189000, "건강보험": 175670, "고용보험": 41800, "기타공제": 54700, "공제계": -927890, "저축상환": 111080, "차인지급액": 4742350, "잔여연차": null, "비고": "연말정산 환급", "공제상세": {}, "지급상세": {}}, {"연도": 2021, "월": 3, "구분": "급여", "기본급": 2016000, "고정OT": 356000, "업적급": 1582000, "연금보조": 55540, "연장휴일소급연차": 346240, "성과급": 0, "복리후생기타": 3500000, "총지급액": 4355780, "소득세": 566860, "지방세": 56680, "국민연금": 189000, "건강보험": 175670, "고용보험": 61450, "기타공제": 79240, "공제계": 1128900, "저축상환": 111080, "차인지급액": 3115800, "잔여연차": null, "비고": "소급금 포함", "공제상세": {}, "지급상세": {}}, {"연도": 2021, "월": 4, "구분": "급여", "기본급": 2016000, "고정OT": 356000, "업적급": 1582000, "연금보조": 55540, "연장휴일소급연차": 0, "성과급": 0, "복리후생기타": 2000, "총지급액": 4011540, "소득세": 182950, "지방세": 18290, "국민연금": 189000, "건강보험": 307300, "고용보험": 32090, "기타공제": 54800, "공제계": 784430, "저축상환": 111080, "차인지급액": 3116030, "잔여연차": null, "비고": "", "공제상세": {}, "지급상세": {}}, {"연도": 2021, "월": 5, "구분": "급여", "기본급": 2016000, "고정OT": 356000, "업적급": 1582000, "연금보조": 55540, "연장휴일소급연차": 53830, "성과급": 0, "복리후생기타": 113059, "총지급액": 4066370, "소득세": 190910, "지방세": 19090, "국민연금": 189000, "건강보험": 307300, "고용보험": 33410, "기타공제": 54800, "공제계": 794510, "저축상환": 111080, "차인지급액": 3160780, "잔여연차": null, "비고": "", "공제상세": {}, "지급상세": {}}, {"연도": 2021, "월": 6, "구분": "격려금", "기본급": 0, "고정OT": 0, "업적급": 0, "연금보조": 0, "연장휴일소급연차": 0, "성과급": 2500000, "복리후생기타": 0, "총지급액": 2500000, "소득세": 159000, "지방세": 15900, "국민연금": 0, "건강보험": 0, "고용보험": 20000, "기타공제": 0, "공제계": 194900, "저축상환": 0, "차인지급액": 2305100, "잔여연차": null, "비고": "특별격려금", "공제상세": {}, "지급상세": {}}, {"연도": 2021, "월": 6, "구분": "급여", "기본급": 2196000, "고정OT": 387000, "업적급": 1722000, "연금보조": 55540, "연장휴일소급연차": 1775090, "성과급": 0, "복리후생기타": 120000, "총지급액": 6255630, "소득세": 246670, "지방세": 24660, "국민연금": 189000, "건강보험": 307300, "고용보험": 35840, "기타공제": 371990, "공제계": 1175460, "저축상환": 111080, "차인지급액": 4969090, "잔여연차": null, "비고": "소급금 포함", "공제상세": {}, "지급상세": {}}, {"연도": 2021, "월": 7, "구분": "PI", "기본급": 0, "고정OT": 0, "업적급": 0, "연금보조": 0, "연장휴일소급연차": 0, "성과급": 2583000, "복리후생기타": 0, "총지급액": 2583000, "소득세": 352200, "지방세": 35220, "국민연금": 0, "건강보험": 0, "고용보험": 20660, "기타공제": 0, "공제계": 408080, "저축상환": 0, "차인지급액": 2174920, "잔여연차": null, "비고": "21년 상반기 PI", "공제상세": {}, "지급상세": {}}, {"연도": 2021, "월": 7, "구분": "급여", "기본급": 2196000, "고정OT": 387000, "업적급": 1722000, "연금보조": 62400, "연장휴일소급연차": 0, "성과급": 0, "복리후생기타": 0, "총지급액": 4367400, "소득세": 230740, "지방세": 23070, "국민연금": 220680, "건강보험": 215380, "고용보험": 34930, "기타공제": 55600, "공제계": 780400, "저축상환": 124800, "차인지급액": 3462200, "잔여연차": null, "비고": "", "공제상세": {}, "지급상세": {}}, {"연도": 2021, "월": 8, "구분": "급여", "기본급": 2196000, "고정OT": 387000, "업적급": 1722000, "연금보조": 62400, "연장휴일소급연차": 93780, "성과급": 0, "복리후생기타": 0, "총지급액": 4461180, "소득세": 244010, "지방세": 24400, "국민연금": 220680, "건강보험": 215380, "고용보험": 35680, "기타공제": 55600, "공제계": 795750, "저축상환": 124800, "차인지급액": 3540630, "잔여연차": null, "비고": "", "공제상세": {}, "지급상세": {}}, {"연도": 2021, "월": 9, "구분": "급여", "기본급": 2196000, "고정OT": 387000, "업적급": 1722000, "연금보조": 62400, "연장휴일소급연차": 0, "성과급": 0, "복리후생기타": 435500, "총지급액": 4502900, "소득세": 293810, "지방세": 29380, "국민연금": 220680, "건강보험": 215380, "고용보험": 38420, "기타공제": 55600, "공제계": 853270, "저축상환": 124800, "차인지급액": 3524830, "잔여연차": null, "비고": "의료비 포함", "공제상세": {}, "지급상세": {}}, {"연도": 2021, "월": 10, "구분": "급여", "기본급": 2196000, "고정OT": 387000, "업적급": 1722000, "연금보조": 62400, "연장휴일소급연차": 0, "성과급": 0, "복리후생기타": 173410, "총지급액": 4540810, "소득세": 255040, "지방세": 25500, "국민연금": 220680, "건강보험": 215380, "고용보험": 36320, "기타공제": 294000, "공제계": 1046920, "저축상환": 124800, "차인지급액": 3369090, "잔여연차": null, "비고": "", "공제상세": {}, "지급상세": {}}, {"연도": 2021, "월": 11, "구분": "급여", "기본급": 2196000, "고정OT": 387000, "업적급": 1722000, "연금보조": 62400, "연장휴일소급연차": 74320, "성과급": 0, "복리후생기타": 3000, "총지급액": 4444720, "소득세": 241360, "지방세": 24130, "국민연금": 220680, "건강보험": 215380, "고용보험": 35550, "기타공제": 55600, "공제계": 792700, "저축상환": 124800, "차인지급액": 3527220, "잔여연차": null, "비고": "", "공제상세": {}, "지급상세": {}}, {"연도": 2021, "월": 12, "구분": "급여", "기본급": 2196000, "고정OT": 387000, "업적급": 1722000, "연금보조": 62400, "연장휴일소급연차": 1250320, "성과급": 0, "복리후생기타": 66030, "총지급액": 5683750, "소득세": 416570, "지방세": 41650, "국민연금": 220680, "건강보험": 215380, "고용보험": 45470, "기타공제": 55600, "공제계": 995350, "저축상환": 124800, "차인지급액": 4563600, "잔여연차": null, "비고": "연차수당 포함", "공제상세": {}, "지급상세": {}}, {"연도": 2021, "월": 12, "구분": "성과급", "기본급": 0, "고정OT": 0, "업적급": 0, "연금보조": 0, "연장휴일소급연차": 0, "성과급": 7749000, "복리후생기타": 0, "총지급액": 7749000, "소득세": 986200, "지방세": 98620, "국민연금": 0, "건강보험": 0, "고용보험": 61990, "기타공제": 0, "공제계": 1146810, "저축상환": 0, "차인지급액": 6602190, "잔여연차": null, "비고": "특별성과급", "공제상세": {}, "지급상세": {}}, {"연도": 2022, "월": 1, "구분": "PI", "기본급": 0, "고정OT": 0, "업적급": 0, "연금보조": 0, "연장휴일소급연차": 0, "성과급": 2583000, "복리후생기타": 0, "총지급액": 2583000, "소득세": 281700, "지방세": 28170, "국민연금": 0, "건강보험": 0, "고용보험": 20660, "기타공제": 0, "공제계": 330530, "저축상환": 0, "차인지급액": 2252470, "잔여연차": null, "비고": "21년 하반기 PI", "공제상세": {}, "지급상세": {}}, {"연도": 2022, "월": 1, "구분": "급여", "기본급": 2240000, "고정OT": 395000, "업적급": 1867000, "연금보조": 62400, "연장휴일소급연차": 74630, "성과급": 0, "복리후생기타": 54200, "총지급액": 4693230, "소득세": 211570, "지방세": 21150, "국민연금": 220680, "건강보험": 220940, "고용보험": 37540, "기타공제": 55800, "공제계": 767680, "저축상환": 124800, "차인지급액": 3800750, "잔여연차": null, "비고": "", "공제상세": {}, "지급상세": {}}, {"연도": 2022, "월": 1, "구분": "PS", "기본급": 0, "고정OT": 0, "업적급": 0, "연금보조": 0, "연장휴일소급연차": 0, "성과급": 26863200, "복리후생기타": 0, "총지급액": 26863200, "소득세": 4151500, "지방세": 415150, "국민연금": 0, "건강보험": 0, "고용보험": 214900, "기타공제": 0, "공제계": 4781550, "저축상환": 0, "차인지급액": 22081650, "잔여연차": null, "비고": "2021년 PS", "공제상세": {}, "지급상세": {}}, {"연도": 2022, "월": 2, "구분": "급여", "기본급": 2240000, "고정OT": 395000, "업적급": 1867000, "연금보조": 62400, "연장휴일소급연차": 179390, "성과급": 105000, "복리후생기타": 1304000, "총지급액": 4852790, "소득세": 42160, "지방세": 4270, "국민연금": 220680, "건강보험": 220940, "고용보험": 49220, "기타공제": 55800, "공제계": 593070, "저축상환": 124800, "차인지급액": 4134920, "잔여연차": null, "비고": "연말정산 환급포함", "공제상세": {}, "지급상세": {}}, {"연도": 2022, "월": 3, "구분": "급여", "기본급": 2240000, "고정OT": 395000, "업적급": 1867000, "연금보조": 62400, "연장휴일소급연차": 78930, "성과급": 0, "복리후생기타": 4000, "총지급액": 4647330, "소득세": 187660, "지방세": 18760, "국민연금": 220680, "건강보험": 220940, "고용보험": 37170, "기타공제": 55800, "공제계": 741010, "저축상환": 124800, "차인지급액": 3781520, "잔여연차": null, "비고": "", "공제상세": {}, "지급상세": {}}, {"연도": 2022, "월": 3, "구분": "축하금", "기본급": 0, "고정OT": 0, "업적급": 0, "연금보조": 0, "연장휴일소급연차": 0, "성과급": 5270000, "복리후생기타": 0, "총지급액": 5270000, "소득세": 814400, "지방세": 81440, "국민연금": 0, "건강보험": 0, "고용보험": 42160, "기타공제": 0, "공제계": 938000, "저축상환": 0, "차인지급액": 4332000, "잔여연차": null, "비고": "특별축하금", "공제상세": {}, "지급상세": {}}, {"연도": 2022, "월": 4, "구분": "급여", "기본급": 2240000, "고정OT": 395000, "업적급": 1867000, "연금보조": 62400, "연장휴일소급연차": 175080, "성과급": 0, "복리후생기타": 2000, "총지급액": 4741480, "소득세": 200560, "지방세": 20050, "국민연금": 220680, "건강보험": 384860, "고용보험": 37930, "기타공제": 75800, "공제계": 939880, "저축상환": 124800, "차인지급액": 3676800, "잔여연차": null, "비고": "", "공제상세": {}, "지급상세": {}}, {"연도": 2022, "월": 5, "구분": "급여", "기본급": 2240000, "고정OT": 395000, "업적급": 1867000, "연금보조": 62400, "연장휴일소급연차": 0, "성과급": 0, "복리후생기타": 0, "총지급액": 4564400, "소득세": 174840, "지방세": 17480, "국민연금": 220680, "건강보험": 384710, "고용보험": 36510, "기타공제": 85800, "공제계": 920020, "저축상환": 124800, "차인지급액": 3519580, "잔여연차": null, "비고": "", "공제상세": {}, "지급상세": {}}, {"연도": 2022, "월": 6, "구분": "급여", "기본급": 2240000, "고정OT": 395000, "업적급": 1867000, "연금보조": 62400, "연장휴일소급연차": 0, "성과급": 0, "복리후생기타": 160308, "총지급액": 4724700, "소득세": 197980, "지방세": 19790, "국민연금": 220680, "건강보험": 384710, "고용보험": 37790, "기타공제": 55800, "공제계": 916750, "저축상환": 124800, "차인지급액": 3683150, "잔여연차": null, "비고": "", "공제상세": {}, "지급상세": {}}, {"연도": 2022, "월": 6, "구분": "PI", "기본급": 0, "고정OT": 0, "업적급": 0, "연금보조": 0, "연장휴일소급연차": 0, "성과급": 2635000, "복리후생기타": 0, "총지급액": 2635000, "소득세": 287400, "지방세": 28740, "국민연금": 0, "건강보험": 0, "고용보험": 21080, "기타공제": 0, "공제계": 337220, "저축상환": 0, "차인지급액": 2297780, "잔여연차": null, "비고": "22년 상반기 PI", "공제상세": {}, "지급상세": {}}, {"연도": 2022, "월": 7, "구분": "급여", "기본급": 2446000, "고정OT": 431000, "업적급": 2038000, "연금보조": 69260, "연장휴일소급연차": 2766650, "성과급": 0, "복리후생기타": 0, "총지급액": 7750910, "소득세": 231520, "지방세": 23150, "국민연금": 248850, "건강보험": 384710, "고용보험": 44850, "기타공제": 573290, "공제계": 1506370, "저축상환": 138520, "차인지급액": 6106020, "잔여연차": null, "비고": "소급금 포함", "공제상세": {}, "지급상세": {}}, {"연도": 2022, "월": 8, "구분": "급여", "기본급": 2446000, "고정OT": 431000, "업적급": 2038000, "연금보조": 69260, "연장휴일소급연차": 0, "성과급": 0, "복리후생기타": 699220, "총지급액": 4984260, "소득세": 321820, "지방세": 32180, "국민연금": 248850, "건강보험": 384710, "고용보험": 51150, "기타공제": 200700, "공제계": 1239410, "저축상환": 138520, "차인지급액": 3606330, "잔여연차": null, "비고": "", "공제상세": {}, "지급상세": {}}, {"연도": 2022, "월": 9, "구분": "급여", "기본급": 2446000, "고정OT": 431000, "업적급": 2038000, "연금보조": 69260, "연장휴일소급연차": 0, "성과급": 0, "복리후생기타": 0, "총지급액": 4984260, "소득세": 231520, "지방세": 23150, "국민연금": 248850, "건강보험": 384710, "고용보험": 44850, "기타공제": 86700, "공제계": 1019780, "저축상환": 138520, "차인지급액": 3825960, "잔여연차": null, "비고": "", "공제상세": {}, "지급상세": {}}, {"연도": 2022, "월": 10, "구분": "급여", "기본급": 2446000, "고정OT": 431000, "업적급": 2038000, "연금보조": 69260, "연장휴일소급연차": 0, "성과급": 0, "복리후생기타": 117900, "총지급액": 5102160, "소득세": 247000, "지방세": 24700, "국민연금": 248850, "건강보험": 384710, "고용보험": 45910, "기타공제": 126700, "공제계": 1077870, "저축상환": 138520, "차인지급액": 3885770, "잔여연차": null, "비고": "", "공제상세": {}, "지급상세": {}}, {"연도": 2022, "월": 11, "구분": "급여", "기본급": 2446000, "고정OT": 431000, "업적급": 2038000, "연금보조": 69260, "연장휴일소급연차": 0, "성과급": 0, "복리후생기타": 80000, "총지급액": 4986260, "소득세": 241840, "지방세": 24180, "국민연금": 248850, "건강보험": 384710, "고용보험": 45570, "기타공제": 231700, "공제계": 1176850, "저축상환": 138520, "차인지급액": 3670890, "잔여연차": null, "비고": "", "공제상세": {}, "지급상세": {}}, {"연도": 2022, "월": 12, "구분": "급여", "기본급": 2446000, "고정OT": 431000, "업적급": 2038000, "연금보조": 69260, "연장휴일소급연차": 766000, "성과급": 0, "복리후생기타": 201520, "총지급액": 5752260, "소득세": 384050, "지방세": 38400, "국민연금": 248850, "건강보험": 384710, "고용보험": 53560, "기타공제": 126700, "공제계": 1236270, "저축상환": 138520, "차인지급액": 4377470, "잔여연차": null, "비고": "연차수당 포함", "공제상세": {}, "지급상세": {}}, {"연도": 2022, "월": 12, "구분": "PI", "기본급": 0, "고정OT": 0, "업적급": 0, "연금보조": 0, "연장휴일소급연차": 0, "성과급": 2877000, "복리후생기타": 0, "총지급액": 2877000, "소득세": 313800, "지방세": 31380, "국민연금": 0, "건강보험": 0, "고용보험": 25890, "기타공제": 0, "공제계": 371070, "저축상환": 0, "차인지급액": 2505930, "잔여연차": null, "비고": "22년 하반기 PI", "공제상세": {}, "지급상세": {}}, {"연도": 2023, "월": 1, "구분": "급여", "기본급": 2495000, "고정OT": 440000, "업적급": 1957000, "연금보조": 69260, "연장휴일소급연차": 0, "성과급": 0, "복리후생기타": 116900, "총지급액": 5078160, "소득세": 241840, "지방세": 24180, "국민연금": 248850, "건강보험": 390590, "고용보험": 45700, "기타공제": 202200, "공제계": 1153360, "저축상환": 138520, "차인지급액": 3786280, "잔여연차": null, "비고": "", "공제상세": {}, "지급상세": {}}, {"연도": 2023, "월": 2, "구분": "PS", "기본급": 0, "고정OT": 0, "업적급": 0, "연금보조": 0, "연장휴일소급연차": 0, "성과급": 24181800, "복리후생기타": 0, "총지급액": 24181800, "소득세": 3077600, "지방세": 307760, "국민연금": 0, "건강보험": 0, "고용보험": 217630, "기타공제": 0, "공제계": 3602990, "저축상환": 0, "차인지급액": 20578810, "잔여연차": null, "비고": "22년 PS", "공제상세": {}, "지급상세": {}}, {"연도": 2023, "월": 2, "구분": "급여", "기본급": 2495000, "고정OT": 440000, "업적급": 1957000, "연금보조": 69260, "연장휴일소급연차": 0, "성과급": 0, "복리후생기타": 2000000, "총지급액": 4961260, "소득세": -605500, "지방세": -60500, "국민연금": 248850, "건강보험": 312200, "고용보험": 62650, "기타공제": 197000, "공제계": 154700, "저축상환": 138520, "차인지급액": 4668040, "잔여연차": null, "비고": "연말정산 환급포함", "공제상세": {}, "지급상세": {}}, {"연도": 2023, "월": 3, "구분": "급여", "기본급": 2495000, "고정OT": 440000, "업적급": 1957000, "연금보조": 69260, "연장휴일소급연차": 0, "성과급": 0, "복리후생기타": 175490, "총지급액": 4965260, "소득세": 234580, "지방세": 23450, "국민연금": 248850, "건강보험": 312200, "고용보험": 46230, "기타공제": 167000, "공제계": 1032310, "저축상환": 138520, "차인지급액": 3794430, "잔여연차": null, "비고": "", "공제상세": {}, "지급상세": {}}, {"연도": 2023, "월": 4, "구분": "급여", "기본급": 2495000, "고정OT": 440000, "업적급": 1957000, "연금보조": 69260, "연장휴일소급연차": 0, "성과급": 0, "복리후생기타": 66366, "총지급액": 4988160, "소득세": 221680, "지방세": 22160, "국민연금": 248850, "건강보험": 344320, "고용보험": 45240, "기타공제": 197000, "공제계": 1079250, "저축상환": 138520, "차인지급액": 3770390, "잔여연차": null, "비고": "", "공제상세": {}, "지급상세": {}}, {"연도": 2023, "월": 5, "구분": "급여", "기본급": 2495000, "고정OT": 440000, "업적급": 1957000, "연금보조": 69260, "연장휴일소급연차": 0, "성과급": 0, "복리후생기타": 64100, "총지급액": 4961260, "소득세": 221680, "지방세": 22160, "국민연금": 248850, "건강보험": 344260, "고용보험": 45220, "기타공제": 157000, "공제계": 1039170, "저축상환": 138520, "차인지급액": 3783570, "잔여연차": null, "비고": "", "공제상세": {}, "지급상세": {}}, {"연도": 2023, "월": 6, "구분": "급여", "기본급": 2495000, "고정OT": 440000, "업적급": 1957000, "연금보조": 69260, "연장휴일소급연차": 0, "성과급": 0, "복리후생기타": 3000, "총지급액": 4964260, "소득세": 213940, "지방세": 21390, "국민연금": 248850, "건강보험": 344260, "고용보험": 44670, "기타공제": 237000, "공제계": 1110110, "저축상환": 138520, "차인지급액": 3715630, "잔여연차": null, "비고": "", "공제상세": {}, "지급상세": {}}, {"연도": 2023, "월": 7, "구분": "급여", "기본급": 2495000, "고정OT": 440000, "업적급": 1957000, "연금보조": 71220, "연장휴일소급연차": 0, "성과급": 0, "복리후생기타": 158400, "총지급액": 5121620, "소득세": 234580, "지방세": 23450, "국민연금": 265500, "건강보험": 344260, "고용보험": 46090, "기타공제": 132000, "공제계": 1045880, "저축상환": 142440, "차인지급액": 3933300, "잔여연차": null, "비고": "", "공제상세": {}, "지급상세": {}}, {"연도": 2023, "월": 8, "구분": "격려금", "기본급": 0, "고정OT": 0, "업적급": 0, "연금보조": 0, "연장휴일소급연차": 0, "성과급": 1200000, "복리후생기타": 0, "총지급액": 1200000, "소득세": 0, "지방세": 0, "국민연금": 0, "건강보험": 0, "고용보험": 0, "기타공제": 0, "공제계": 0, "저축상환": 0, "차인지급액": 1200000, "잔여연차": null, "비고": "위기극복 격려금", "공제상세": {}, "지급상세": {}}, {"연도": 2023, "월": 8, "구분": "급여", "기본급": 2495000, "고정OT": 440000, "업적급": 1957000, "연금보조": 71220, "연장휴일소급연차": 0, "성과급": 0, "복리후생기타": 1000, "총지급액": 4964220, "소득세": 290240, "지방세": 29020, "국민연금": 265500, "건강보험": 344260, "고용보험": 55470, "기타공제": 247000, "공제계": 1231490, "저축상환": 142440, "차인지급액": 3590290, "잔여연차": null, "비고": "", "공제상세": {}, "지급상세": {}}, {"연도": 2023, "월": 9, "구분": "급여", "기본급": 2495000, "고정OT": 440000, "업적급": 1957000, "연금보조": 71220, "연장휴일소급연차": 0, "성과급": 0, "복리후생기타": 0, "총지급액": 4963220, "소득세": 213940, "지방세": 21390, "국민연금": 265500, "건강보험": 344260, "고용보험": 44660, "기타공제": 227000, "공제계": 1116750, "저축상환": 142440, "차인지급액": 3704030, "잔여연차": null, "비고": "", "공제상세": {}, "지급상세": {}}, {"연도": 2023, "월": 10, "구분": "급여", "기본급": 2495000, "고정OT": 440000, "업적급": 1957000, "연금보조": 71220, "연장휴일소급연차": 0, "성과급": 0, "복리후생기타": 14400, "총지급액": 4977620, "소득세": 213940, "지방세": 21390, "국민연금": 265500, "건강보험": 344260, "고용보험": 44790, "기타공제": 252000, "공제계": 1141880, "저축상환": 142440, "차인지급액": 3693300, "잔여연차": null, "비고": "", "공제상세": {}, "지급상세": {}}, {"연도": 2023, "월": 11, "구분": "급여", "기본급": 2495000, "고정OT": 440000, "업적급": 1957000, "연금보조": 71220, "연장휴일소급연차": 0, "성과급": 0, "복리후생기타": 0, "총지급액": 4963220, "소득세": 213940, "지방세": 21390, "국민연금": 265500, "건강보험": 344260, "고용보험": 44660, "기타공제": 167000, "공제계": 1056750, "저축상환": 142440, "차인지급액": 3764030, "잔여연차": null, "비고": "", "공제상세": {}, "지급상세": {}}, {"연도": 2023, "월": 12, "구분": "급여", "기본급": 2556000, "고정OT": 451000, "업적급": 2005000, "연금보조": 73180, "연장휴일소급연차": 1320000, "성과급": 0, "복리후생기타": 24944, "총지급액": 6405180, "소득세": 232000, "지방세": 23200, "국민연금": 265500, "건강보험": 344260, "고용보험": 45990, "기타공제": 377250, "공제계": 1288200, "저축상환": 146360, "차인지급액": 4970620, "잔여연차": null, "비고": "소급금 포함", "공제상세": {}, "지급상세": {}}, {"연도": 2024, "월": 1, "구분": "급여", "기본급": 2702000, "고정OT": 476000, "업적급": 2248000, "연금보조": 73180, "연장휴일소급연차": 0, "성과급": 0, "복리후생기타": 648400, "총지급액": 5547580, "소득세": 395450, "지방세": 39540, "국민연금": 265500, "건강보험": 344620, "고용보험": 55320, "기타공제": 367900, "공제계": 1468330, "저축상환": 146360, "차인지급액": 3932890, "잔여연차": null, "비고": "", "공제상세": {}, "지급상세": {}}, {"연도": 2024, "월": 1, "구분": "PI", "기본급": 0, "고정OT": 0, "업적급": 0, "연금보조": 0, "연장휴일소급연차": 0, "성과급": 1503500, "복리후생기타": 0, "총지급액": 1503500, "소득세": 205000, "지방세": 20500, "국민연금": 0, "건강보험": 0, "고용보험": 13530, "기타공제": 0, "공제계": 239030, "저축상환": 0, "차인지급액": 1264470, "잔여연차": null, "비고": "23년 하반기 PI", "공제상세": {}, "지급상세": {}}, {"연도": 2024, "월": 1, "구분": "격려금", "기본급": 0, "고정OT": 0, "업적급": 0, "연금보조": 0, "연장휴일소급연차": 0, "성과급": 2000000, "복리후생기타": 0, "총지급액": 2000000, "소득세": 145400, "지방세": 14540, "국민연금": 0, "건강보험": 0, "고용보험": 18000, "기타공제": 0, "공제계": 177940, "저축상환": 0, "차인지급액": 1822060, "잔여연차": null, "비고": "", "공제상세": {}, "지급상세": {}}, {"연도": 2024, "월": 2, "구분": "급여", "기본급": 2702000, "고정OT": 476000, "업적급": 2248000, "연금보조": 73180, "연장휴일소급연차": 0, "성과급": 0, "복리후생기타": 9000, "총지급액": 5508180, "소득세": -1248210, "지방세": -124780, "국민연금": 265500, "건강보험": 287440, "고용보험": 49570, "기타공제": 247900, "공제계": -522580, "저축상환": 146360, "차인지급액": 5884400, "잔여연차": null, "비고": "연말정산 환급포함", "공제상세": {}, "지급상세": {}}, {"연도": 2024, "월": 3, "구분": "급여", "기본급": 2702000, "고정OT": 476000, "업적급": 2248000, "연금보조": 73180, "연장휴일소급연차": 0, "성과급": 0, "복리후생기타": 2003000, "총지급액": 5502180, "소득세": 632950, "지방세": 63290, "국민연금": 265500, "건강보험": 287440, "고용보험": 67510, "기타공제": 456420, "공제계": 1773110, "저축상환": 146360, "차인지급액": 3582710, "잔여연차": null, "비고": "자사주세금공제 포함", "공제상세": {}, "지급상세": {}}, {"연도": 2024, "월": 4, "구분": "급여", "기본급": 2702000, "고정OT": 476000, "업적급": 2248000, "연금보조": 73180, "연장휴일소급연차": 0, "성과급": 0, "복리후생기타": 0, "총지급액": 5499180, "소득세": 281020, "지방세": 28100, "국민연금": 265500, "건강보험": 362360, "고용보험": 49490, "기타공제": 172900, "공제계": 1159370, "저축상환": 146360, "차인지급액": 4193450, "잔여연차": null, "비고": "", "공제상세": {}, "지급상세": {}}, {"연도": 2024, "월": 5, "구분": "급여", "기본급": 2702000, "고정OT": 476000, "업적급": 2248000, "연금보조": 73180, "연장휴일소급연차": 0, "성과급": 0, "복리후생기타": 73680, "총지급액": 5499180, "소득세": 291340, "지방세": 29130, "국민연금": 265500, "건강보험": 263780, "고용보험": 50150, "기타공제": 267900, "공제계": 1167800, "저축상환": 146360, "차인지급액": 4185020, "잔여연차": null, "비고": "", "공제상세": {}, "지급상세": {}}, {"연도": 2024, "월": 6, "구분": "급여", "기본급": 2702000, "고정OT": 476000, "업적급": 2248000, "연금보조": 73180, "연장휴일소급연차": 0, "성과급": 0, "복리후생기타": 0, "총지급액": 5499180, "소득세": 281020, "지방세": 28100, "국민연금": 265500, "건강보험": 263780, "고용보험": 49490, "기타공제": 222900, "공제계": 1110790, "저축상환": 146360, "차인지급액": 4242030, "잔여연차": null, "비고": "", "공제상세": {}, "지급상세": {}}, {"연도": 2024, "월": 7, "구분": "급여", "기본급": 2702000, "고정OT": 476000, "업적급": 2248000, "연금보조": 73180, "연장휴일소급연차": 43270, "성과급": 0, "복리후생기타": 785988, "총지급액": 5724550, "소득세": 408650, "지방세": 40860, "국민연금": 277650, "건강보험": 263780, "고용보험": 58030, "기타공제": 267900, "공제계": 1316870, "저축상환": 146360, "차인지급액": 4261320, "잔여연차": null, "비고": "", "공제상세": {}, "지급상세": {}}, {"연도": 2024, "월": 7, "구분": "PI", "기본급": 0, "고정OT": 0, "업적급": 0, "연금보조": 0, "연장휴일소급연차": 0, "성과급": 4767000, "복리후생기타": 0, "총지급액": 4767000, "소득세": 650000, "지방세": 65000, "국민연금": 0, "건강보험": 0, "고용보험": 42900, "기타공제": 0, "공제계": 757900, "저축상환": 0, "차인지급액": 4009100, "잔여연차": null, "비고": "24년 상반기 PI", "공제상세": {}, "지급상세": {}}, {"연도": 2024, "월": 8, "구분": "급여", "기본급": 2702000, "고정OT": 476000, "업적급": 2248000, "연금보조": 73180, "연장휴일소급연차": 0, "성과급": 0, "복리후생기타": 2000, "총지급액": 5501180, "소득세": 283600, "지방세": 28360, "국민연금": 277650, "건강보험": 263780, "고용보험": 49510, "기타공제": 132900, "공제계": 1035800, "저축상환": 146360, "차인지급액": 4319020, "잔여연차": null, "비고": "", "공제상세": {}, "지급상세": {}}, {"연도": 2024, "월": 9, "구분": "급여", "기본급": 2796000, "고정OT": 522000, "업적급": 2347000, "연금보조": 80040, "연장휴일소급연차": 1680010, "성과급": 0, "복리후생기타": 0, "총지급액": 7425050, "소득세": 314560, "지방세": 31450, "국민연금": 277650, "건강보험": 263780, "고용보험": 51700, "기타공제": 378840, "공제계": 1317980, "저축상환": 160080, "차인지급액": 5946990, "잔여연차": null, "비고": "소급금 포함", "공제상세": {}, "지급상세": {}}, {"연도": 2024, "월": 10, "구분": "급여", "기본급": 2796000, "고정OT": 522000, "업적급": 2347000, "연금보조": 80040, "연장휴일소급연차": 376760, "성과급": 0, "복리후생기타": 19300, "총지급액": 6141100, "소득세": 390440, "지방세": 39040, "국민연금": 277650, "건강보험": 263780, "고용보험": 53700, "기타공제": 1228410, "공제계": 2253020, "저축상환": 160080, "차인지급액": 3728000, "잔여연차": null, "비고": "소급금 공제 포함", "공제상세": {}, "지급상세": {}}, {"연도": 2024, "월": 10, "구분": "격려금", "기본급": 0, "고정OT": 0, "업적급": 0, "연금보조": 0, "연장휴일소급연차": 0, "성과급": 4500000, "복리후생기타": 0, "총지급액": 4500000, "소득세": 327200, "지방세": 32720, "국민연금": 0, "건강보험": 0, "고용보험": 40500, "기타공제": 0, "공제계": 400420, "저축상환": 0, "차인지급액": 4099580, "잔여연차": null, "비고": "One Team Mind", "공제상세": {}, "지급상세": {}}, {"연도": 2024, "월": 11, "구분": "급여", "기본급": 2796000, "고정OT": 522000, "업적급": 2347000, "연금보조": 80040, "연장휴일소급연차": 0, "성과급": 0, "복리후생기타": 3000, "총지급액": 5748040, "소득세": 333310, "지방세": 33330, "국민연금": 277650, "건강보험": 263780, "고용보험": 51730, "기타공제": 178400, "공제계": 1138200, "저축상환": 160080, "차인지급액": 4449760, "잔여연차": null, "비고": "", "공제상세": {}, "지급상세": {}}, {"연도": 2024, "월": 12, "구분": "급여", "기본급": 2796000, "고정OT": 522000, "업적급": 2347000, "연금보조": 80040, "연장휴일소급연차": 2850, "성과급": 0, "복리후생기타": 201000, "총지급액": 5748890, "소득세": 387800, "지방세": 38780, "국민연금": 277650, "건강보험": 263780, "고용보험": 53510, "기타공제": 178420, "공제계": 1199940, "저축상환": 160080, "차인지급액": 4388870, "잔여연차": null, "비고": "", "공제상세": {}, "지급상세": {}}, {"연도": 2024, "월": 12, "구분": "PI", "기본급": 0, "고정OT": 0, "업적급": 0, "연금보조": 0, "연장휴일소급연차": 0, "성과급": 4977000, "복리후생기타": 0, "총지급액": 4977000, "소득세": 678600, "지방세": 67860, "국민연금": 0, "건강보험": 0, "고용보험": 44790, "기타공제": 0, "공제계": 791250, "저축상환": 0, "차인지급액": 4185750, "잔여연차": null, "비고": "24년 하반기 PI", "공제상세": {}, "지급상세": {}}, {"연도": 2025, "월": 1, "구분": "PS/급여", "기본급": 2937000, "고정OT": 504000, "업적급": 2438000, "연금보조": 80040, "연장휴일소급연차": 0, "성과급": 52344600, "복리후생기타": 1001000, "총지급액": 58304640, "소득세": 7686800, "지방세": 768680, "국민연금": 277650, "건강보험": 263780, "고용보험": 533740, "기타공제": 178920, "공제계": 9709570, "저축상환": 160080, "차인지급액": 48434990, "잔여연차": null, "비고": "급여+PS+특별성과급 통합", "공제상세": {}, "지급상세": {}}, {"연도": 2025, "월": 2, "구분": "급여", "기본급": 2937000, "고정OT": 504000, "업적급": 2438000, "연금보조": 80040, "연장휴일소급연차": 0, "성과급": 0, "복리후생기타": 215000, "총지급액": 5974040, "소득세": 204440, "지방세": 20480, "국민연금": 277650, "건강보험": 263780, "고용보험": 55560, "기타공제": 223900, "공제계": 1045810, "저축상환": 160080, "차인지급액": 4768150, "잔여연차": null, "비고": "연말정산 환급포함", "공제상세": {}, "지급상세": {}}, {"연도": 2025, "월": 3, "구분": "급여", "기본급": 2937000, "고정OT": 504000, "업적급": 2438000, "연금보조": 80040, "연장휴일소급연차": 0, "성과급": 0, "복리후생기타": 1500000, "총지급액": 5959040, "소득세": 650280, "지방세": 65020, "국민연금": 277650, "건강보험": 263780, "고용보험": 67130, "기타공제": 347040, "공제계": 1670900, "저축상환": 160080, "차인지급액": 4128060, "잔여연차": null, "비고": "자사주세금공제 포함", "공제상세": {}, "지급상세": {}}, {"연도": 2025, "월": 4, "구분": "급여", "기본급": 2937000, "고정OT": 504000, "업적급": 2438000, "연금보조": 80040, "연장휴일소급연차": 0, "성과급": 0, "복리후생기타": 0, "총지급액": 5959040, "소득세": 387800, "지방세": 38780, "국민연금": 277650, "건강보험": 903970, "고용보험": 53630, "기타공제": 418260, "공제계": 2080090, "저축상환": 160080, "차인지급액": 3718870, "잔여연차": null, "비고": "", "공제상세": {}, "지급상세": {}}, {"연도": 2025, "월": 5, "구분": "급여", "기본급": 2937000, "고정OT": 504000, "업적급": 2438000, "연금보조": 80040, "연장휴일소급연차": 225690, "성과급": 0, "복리후생기타": 0, "총지급액": 6184730, "소득세": 387800, "지방세": 38780, "국민연금": 277650, "건강보험": 475390, "고용보험": 53630, "기타공제": 530110, "공제계": 1763360, "저축상환": 160080, "차인지급액": 4261290, "잔여연차": null, "비고": "소급금 포함", "공제상세": {}, "지급상세": {}}, {"연도": 2025, "월": 6, "구분": "급여", "기본급": 2937000, "고정OT": 504000, "업적급": 2438000, "연금보조": 80040, "연장휴일소급연차": 0, "성과급": 0, "복리후생기타": 81300, "총지급액": 5963040, "소득세": 401000, "지방세": 40100, "국민연금": 277650, "건강보험": 475390, "고용보험": 54360, "기타공제": 213900, "공제계": 1462400, "저축상환": 160080, "차인지급액": 4340560, "잔여연차": null, "비고": "", "공제상세": {}, "지급상세": {}}, {"연도": 2025, "월": 7, "구분": "급여", "기본급": 2937000, "고정OT": 504000, "업적급": 2438000, "연금보조": 80040, "연장휴일소급연차": 0, "성과급": 0, "복리후생기타": 191700, "총지급액": 6150740, "소득세": 414200, "지방세": 41420, "국민연금": 286650, "건강보험": 475390, "고용보험": 55350, "기타공제": 258900, "공제계": 1531910, "저축상환": 160080, "차인지급액": 4458750, "잔여연차": null, "비고": "", "공제상세": {}, "지급상세": {}}, {"연도": 2025, "월": 7, "구분": "PI", "기본급": 0, "고정OT": 0, "업적급": 0, "연금보조": 0, "연장휴일소급연차": 0, "성과급": 5161500, "복리후생기타": 0, "총지급액": 5161500, "소득세": 703800, "지방세": 70380, "국민연금": 0, "건강보험": 0, "고용보험": 46450, "기타공제": 0, "공제계": 820630, "저축상환": 0, "차인지급액": 4340870, "잔여연차": null, "비고": "25년 상반기 PI", "공제상세": {}, "지급상세": {}}, {"연도": 2025, "월": 8, "구분": "급여", "기본급": 2937000, "고정OT": 504000, "업적급": 2438000, "연금보조": 80040, "연장휴일소급연차": 0, "성과급": 0, "복리후생기타": 0, "총지급액": 5959040, "소득세": 387800, "지방세": 38780, "국민연금": 286650, "건강보험": 475390, "고용보험": 53630, "기타공제": 288900, "공제계": 1531150, "저축상환": 160080, "차인지급액": 4267810, "잔여연차": null, "비고": "", "공제상세": {}, "지급상세": {}}, {"연도": 2025, "월": 9, "구분": "급여", "기본급": 3086000, "고정OT": 529000, "업적급": 2560000, "연금보조": 88860, "연장휴일소급연차": 2640420, "성과급": 0, "복리후생기타": 1000, "총지급액": 8905280, "소득세": 430040, "지방세": 43000, "국민연금": 286650, "건강보험": 475390, "고용보험": 56380, "기타공제": 496400, "공제계": 1787860, "저축상환": 177720, "차인지급액": 6939700, "잔여연차": null, "비고": "소급금 포함", "공제상세": {}, "지급상세": {}}, {"연도": 2025, "월": 10, "구분": "급여", "기본급": 3086000, "고정OT": 529000, "업적급": 2560000, "연금보조": 88860, "연장휴일소급연차": 0, "성과급": 0, "복리후생기타": 702000, "총지급액": 6265860, "소득세": 548900, "지방세": 54890, "국민연금": 286650, "건강보험": 475390, "고용보험": 62690, "기타공제": 214500, "공제계": 1643020, "저축상환": 177720, "차인지급액": 4445120, "잔여연차": null, "비고": "", "공제상세": {}, "지급상세": {}}, {"연도": 2025, "월": 11, "구분": "급여", "기본급": 3086000, "고정OT": 529000, "업적급": 2560000, "연금보조": 88860, "연장휴일소급연차": 0, "성과급": 0, "복리후생기타": 197700, "총지급액": 6264860, "소득세": 456440, "지방세": 45640, "국민연금": 286650, "건강보험": 475390, "고용보험": 58150, "기타공제": 219500, "공제계": 1541770, "저축상환": 177720, "차인지급액": 4545370, "잔여연차": null, "비고": "", "공제상세": {}, "지급상세": {}}, {"연도": 2025, "월": 12, "구분": "급여", "기본급": 3086000, "고정OT": 529000, "업적급": 2560000, "연금보조": 88860, "연장휴일소급연차": 0, "성과급": 7230000, "복리후생기타": 1000, "총지급액": 13494860, "소득세": 1415940, "지방세": 141590, "국민연금": 286650, "건강보험": 475390, "고용보험": 121450, "기타공제": 144500, "공제계": 2585520, "저축상환": 177720, "차인지급액": 10731620, "잔여연차": null, "비고": "25년 Talent Bonus 포함", "공제상세": {}, "지급상세": {}}, {"연도": 2026, "월": 1, "구분": "급여", "기본급": 5776000, "고정OT": 480000, "업적급": 0, "연금보조": 88860, "연장휴일소급연차": 0, "성과급": 0, "복리후생기타": 24700, "총지급액": 6369560, "소득세": 539910, "지방세": 53990, "국민연금": 302570, "건강보험": 482910, "고용보험": 57320, "기타공제": 145230, "공제계": 1581930, "저축상환": 177720, "차인지급액": 4609910, "잔여연차": null, "비고": "업적금→기본급 편입", "공제상세": {}, "지급상세": {}}, {"연도": 2026, "월": 1, "구분": "PI", "기본급": 0, "고정OT": 0, "업적급": 0, "연금보조": 0, "연장휴일소급연차": 0, "성과급": 5422500, "복리후생기타": 0, "총지급액": 5422500, "소득세": 739400, "지방세": 73940, "국민연금": 0, "건강보험": 0, "고용보험": 48800, "기타공제": 0, "공제계": 862140, "저축상환": 0, "차인지급액": 4560360, "잔여연차": null, "비고": "25년 하반기 PI", "공제상세": {}, "지급상세": {}}, {"연도": 2026, "월": 2, "구분": "PS", "기본급": 0, "고정OT": 0, "업적급": 0, "연금보조": 0, "연장휴일소급연차": 0, "성과급": 96638260, "복리후생기타": 0, "총지급액": 96638260, "소득세": 16604200, "지방세": 1660420, "국민연금": 0, "건강보험": 0, "고용보험": 782760, "기타공제": 0, "공제계": 19047380, "저축상환": 9663820, "차인지급액": 67927060, "잔여연차": null, "비고": "25년 PS(DC-10% 포함)", "공제상세": {}, "지급상세": {}}, {"연도": 2026, "월": 2, "구분": "급여", "기본급": 5776000, "고정OT": 480000, "업적급": 0, "연금보조": 88860, "연장휴일소급연차": 0, "성과급": 0, "복리후생기타": 14000, "총지급액": 6358860, "소득세": 1219520, "지방세": 121950, "국민연금": 302570, "건강보험": 482910, "고용보험": 84220, "기타공제": 145000, "공제계": 2356170, "저축상환": 177720, "차인지급액": 3824970, "잔여연차": null, "비고": "하이웰300만", "공제상세": {}, "지급상세": {}}, {"연도": 2026, "월": 3, "구분": "급여", "기본급": 5776000, "고정OT": 480000, "업적급": 0, "연금보조": 88860, "연장휴일소급연차": 0, "성과급": 0, "복리후생기타": 3000, "총지급액": 6347860, "소득세": 535400, "지방세": 53540, "국민연금": 302570, "건강보험": 482910, "고용보험": 57130, "기타공제": 145000, "공제계": 1576550, "저축상환": 177720, "차인지급액": 4593590, "잔여연차": null, "비고": "", "공제상세": {}, "지급상세": {}}];
+
+function initSeedData() {
+  const db = loadDB();
+  if (db.length === 0) {
+    saveDB(SEED_DATA);
+    toast('초기 데이터 105건 로드 완료');
+  }
+}
+
+initSeedData();
+
+
+</script>
+
+</body>
+</html>
